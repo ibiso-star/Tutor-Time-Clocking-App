@@ -7,6 +7,7 @@ import { parse } from "../../lib/validate.js";
 import { isIsoDate, localDate, localDateRange } from "../../domain/time.js";
 import { assertTutorInScope, isUuid, requireProjectRole, teamFilterSql } from "../../services/access.js";
 import { writeAudit } from "../../services/audit.js";
+import { maybeSweepProject } from "../../services/notifications.js";
 import { loadBundles, loadSessionDetail, loadSessionRows, toSessionDto } from "../../services/sessions.js";
 
 const projectQuery = z.object({ project_id: z.uuid("Choose a project.") });
@@ -145,6 +146,10 @@ export async function oversightRoutes(app: FastifyInstance) {
     const user = requireUser(req.user);
     const q = parse(projectQuery.extend({ include_acknowledged: z.enum(["true", "false"]).optional() }), req.query);
     await requireProjectRole(db, user, q.project_id, "supervisor");
+    if (!app.config.alertWorkerEnabled) {
+      // No background worker here (e.g. serverless): reviewers' polling drives the deduplicated sweep.
+      await maybeSweepProject(db, q.project_id).catch((err) => req.log.error({ err }, "alert sweep failed"));
+    }
     const { rows } = await db.query(
       `SELECT d.id, r.event_type, d.title, d.body, d.related_entity_id, d.scheduled_at, d.acknowledged_at,
               ack.display_name AS acknowledged_by_name

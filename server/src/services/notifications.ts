@@ -68,9 +68,10 @@ export async function reviewersFor(q: Queryable, projectId: string, tutorId: str
  * and from multiple workers: dedupe keys guarantee one alert per session, rule and recipient.
  * Sessions are never auto-closed (PRD §8).
  */
-export async function runAlertSweep(db: Db, now: Date = new Date()): Promise<number> {
+export async function runAlertSweep(db: Db, now: Date = new Date(), projectId?: string): Promise<number> {
   const { rows: projects } = await db.query<{ id: string; timezone: string; settings: unknown }>(
-    `SELECT id, timezone, settings FROM projects WHERE status = 'active'`,
+    `SELECT id, timezone, settings FROM projects WHERE status = 'active' AND ($1::uuid IS NULL OR id = $1)`,
+    [projectId ?? null],
   );
   let created = 0;
   for (const p of projects) {
@@ -97,6 +98,19 @@ export async function runAlertSweep(db: Db, now: Date = new Date()): Promise<num
     }
   }
   return created;
+}
+
+const lastSweep = new Map<string, number>();
+
+/**
+ * Sweep one project at most once a minute per process. Used where no long-running worker exists
+ * (serverless deployments): reviewers' alert polling drives the sweep instead.
+ */
+export async function maybeSweepProject(db: Db, projectId: string, intervalMs = 60_000): Promise<void> {
+  const now = Date.now();
+  if ((lastSweep.get(projectId) ?? 0) > now - intervalMs) return;
+  lastSweep.set(projectId, now);
+  await runAlertSweep(db, new Date(now), projectId);
 }
 
 export function startAlertWorker(db: Db, log: { error: (o: unknown, msg: string) => void }, intervalMs = 60_000) {

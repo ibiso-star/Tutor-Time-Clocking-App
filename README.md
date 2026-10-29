@@ -77,6 +77,6 @@ docs/            architecture, deployment, implementation status, product pack
 ## Documentation
 
 - [Architecture and decisions](docs/ARCHITECTURE.md)
-- [Deployment and operations](docs/DEPLOYMENT.md)
+- [Deployment and operations](docs/DEPLOYMENT.md) (including Vercel + Supabase)
 - [Implementation status, traceability and open decisions](docs/IMPLEMENTATION-STATUS.md)
 - [Product pack](docs/product/README.md)
