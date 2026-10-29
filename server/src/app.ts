@@ -3,7 +3,6 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import Fastify, { type FastifyInstance } from "fastify";
 import cookie from "@fastify/cookie";
-import fastifyStatic from "@fastify/static";
 import type { Db } from "./db/pool.js";
 import type { AppConfig } from "./config.js";
 import { ApiError, forbidden } from "./lib/errors.js";
@@ -138,6 +137,9 @@ export async function buildApp(opts: BuildOptions): Promise<FastifyInstance> {
   });
 
   if (opts.webDist && existsSync(opts.webDist)) {
+    // Loaded lazily: only the long-running server serves the SPA, and @fastify/static require()s an
+    // ES module that runtimes without require(esm) support (e.g. Vercel functions) cannot load.
+    const { default: fastifyStatic } = await import("@fastify/static");
     await app.register(fastifyStatic, { root: path.resolve(opts.webDist), wildcard: false });
   }
 
