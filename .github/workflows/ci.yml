@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: ttc
+          POSTGRES_PASSWORD: ttc
+          POSTGRES_DB: ttc_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U ttc" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgres://ttc:ttc@localhost:5432/ttc_test
+      E2E_DATABASE_URL: postgres://ttc:ttc@localhost:5432/ttc_e2e
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm audit --omit=dev --audit-level=high
+      - name: Unit and integration tests
+        run: npm test
+      - run: npm run build
+      - name: Create E2E database
+        run: PGPASSWORD=ttc psql -h localhost -U ttc -d ttc_test -c "CREATE DATABASE ttc_e2e"
+      - run: npx playwright install --with-deps chromium
+      - name: End-to-end tests
+        run: npm run test:e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: test-results

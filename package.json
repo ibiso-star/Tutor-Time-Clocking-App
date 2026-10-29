@@ -1,0 +1,54 @@
+{
+  "name": "tutor-time-clock",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Vibe Amplified Tutor Time Clock — server-authoritative time capture for tutors with auditable admin review.",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "concurrently -n api,web -c blue,magenta \"npm:dev:api\" \"npm:dev:web\"",
+    "dev:api": "tsx watch server/src/index.ts",
+    "dev:web": "vite --config web/vite.config.ts",
+    "build": "npm run build:api && npm run build:web",
+    "build:api": "tsc -p server/tsconfig.build.json && cp -r server/src/db/migrations dist/server/src/db/",
+    "build:web": "vite build --config web/vite.config.ts --outDir ../dist/web --emptyOutDir",
+    "start": "node dist/server/src/index.js",
+    "db:migrate": "tsx server/src/db/migrate.ts",
+    "db:seed": "tsx server/src/seed.ts",
+    "typecheck": "tsc -p server/tsconfig.json --noEmit && tsc -p web/tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:unit": "vitest run server/test/unit",
+    "test:integration": "vitest run server/test/integration",
+    "test:e2e": "playwright test"
+  },
+  "dependencies": {
+    "@fastify/cookie": "^11.1.5",
+    "@fastify/static": "^10.1.8",
+    "@fontsource-variable/atkinson-hyperlegible-next": "^5.3.0",
+    "fastify": "^5.12.7",
+    "luxon": "^3.7.2",
+    "pdfkit": "^0.20.2",
+    "pg": "^8.23.1",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0",
+    "@types/luxon": "^3.7.6",
+    "@types/node": "^22.20.5",
+    "@types/pdfkit": "^0.17.7",
+    "@types/pg": "^8.23.1",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "concurrently": "^10.0.6",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "react-router-dom": "^7.18.5",
+    "tsx": "^4.23.15",
+    "typescript": "5.9",
+    "vite": "^8.3.5",
+    "vitest": "^5.0.5"
+  }
+}
