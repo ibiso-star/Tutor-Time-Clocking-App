@@ -3,7 +3,7 @@ import { z } from "zod";
 import { auditContext, requireUser } from "../../lib/context.js";
 import { notFound } from "../../lib/errors.js";
 import { parse } from "../../lib/validate.js";
-import { isUuid, requireProjectRole, teamFilterSql } from "../../services/access.js";
+import { assertTutorInScope, isUuid, requireProjectRole, teamFilterSql } from "../../services/access.js";
 import {
   adjustmentInputSchema,
   createAdjustment,
@@ -46,7 +46,8 @@ export async function reviewRoutes(app: FastifyInstance) {
     if (!isUuid(req.params.id)) throw notFound("Correction request not found.");
     const c = await getCorrection(db, req.params.id);
     if (!c) throw notFound("Correction request not found.");
-    await requireProjectRole(db, user, c.project_id, "supervisor");
+    const scope = await requireProjectRole(db, user, c.project_id, "supervisor");
+    await assertTutorInScope(db, scope, c.requester_id);
     return c;
   });
 

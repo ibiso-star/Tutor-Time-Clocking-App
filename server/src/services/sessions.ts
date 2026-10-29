@@ -72,8 +72,8 @@ export async function loadSessionRows(q: Queryable, where: string, params: unkno
 export async function loadBundles(q: Queryable, sessions: SessionRow[]): Promise<SessionBundle[]> {
   if (sessions.length === 0) return [];
   const ids = sessions.map((s) => s.id);
-  const [events, adjustments, corrections] = await Promise.all([
-    q.query<EventRow>(
+  // Sequential on purpose: `q` may be a single transaction client, which must not run queries concurrently.
+  const events = await q.query<EventRow>(
       `SELECT e.id, e.session_id, e.actor_id, u.display_name AS actor_name, e.event_type, e.occurred_at,
               e.received_at, e.client_captured_at, e.source, e.idempotency_key, e.sync_status,
               e.location_id, e.metadata
@@ -81,8 +81,8 @@ export async function loadBundles(q: Queryable, sessions: SessionRow[]): Promise
         WHERE e.session_id = ANY($1::uuid[])
         ORDER BY e.occurred_at, e.received_at`,
       [ids],
-    ),
-    q.query<AdjustmentRow>(
+    );
+  const adjustments = await q.query<AdjustmentRow>(
       `SELECT a.id, a.session_id, a.adjustment_type, a.effective_start, a.effective_end, a.delta_minutes,
               a.supersedes_adjustment_id, a.created_at, a.reason, a.source_correction_id, a.created_by,
               u.display_name AS created_by_name
@@ -90,13 +90,12 @@ export async function loadBundles(q: Queryable, sessions: SessionRow[]): Promise
         WHERE a.session_id = ANY($1::uuid[])
         ORDER BY a.created_at`,
       [ids],
-    ),
-    q.query<CorrectionSummary & { session_id: string }>(
+    );
+  const corrections = await q.query<CorrectionSummary & { session_id: string }>(
       `SELECT id, session_id, status, submitted_at FROM correction_requests
         WHERE session_id = ANY($1::uuid[]) ORDER BY submitted_at`,
       [ids],
-    ),
-  ]);
+    );
   const by = <T extends { session_id: string }>(rows: T[]) => {
     const m = new Map<string, T[]>();
     for (const r of rows) m.set(r.session_id, [...(m.get(r.session_id) ?? []), r]);

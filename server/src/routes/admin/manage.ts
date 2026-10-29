@@ -7,7 +7,7 @@ import { badRequest, conflict, forbidden, notFound, unprocessable } from "../../
 import { parse } from "../../lib/validate.js";
 import { hashPassword, hashToken, passwordProblem, randomToken } from "../../auth/password.js";
 import { DEFAULT_SETTINGS, describeRounding, projectSettingsSchema, timezoneSchema } from "../../domain/policy.js";
-import { isUuid, requireProjectRole } from "../../services/access.js";
+import { assertTutorInScope, isUuid, requireProjectRole } from "../../services/access.js";
 import { writeAudit } from "../../services/audit.js";
 import { ensureRules } from "../../services/notifications.js";
 
@@ -394,8 +394,9 @@ export async function manageRoutes(app: FastifyInstance) {
       }),
       req.body,
     );
-    await requireProjectRole(db, user, body.project_id, "supervisor");
+    const scope = await requireProjectRole(db, user, body.project_id, "supervisor");
     if (new Date(body.scheduled_end) <= new Date(body.scheduled_start)) throw unprocessable("INVALID_RANGE", "Shift end must be after its start.");
+    if (body.tutor_id) await assertTutorInScope(db, scope, body.tutor_id);
     const shift = await withTransaction(db, async (tx) => {
       if (body.tutor_id) {
         const { rows } = await tx.query(`SELECT 1 FROM project_memberships WHERE project_id = $1 AND user_id = $2 AND role = 'tutor' AND active_to IS NULL`, [body.project_id, body.tutor_id]);
@@ -423,7 +424,8 @@ export async function manageRoutes(app: FastifyInstance) {
     return withTransaction(db, async (tx) => {
       const { rows } = await tx.query(`SELECT * FROM shifts WHERE id = $1 FOR UPDATE`, [req.params.id]);
       if (!rows[0]) throw notFound("Shift not found.");
-      await requireProjectRole(tx, user, rows[0].project_id, "supervisor");
+      const scope = await requireProjectRole(tx, user, rows[0].project_id, "supervisor");
+      if (rows[0].tutor_id) await assertTutorInScope(tx, scope, rows[0].tutor_id);
       if (rows[0].version !== body.version) throw conflict("VERSION_CONFLICT", "This shift changed since you opened it. Reload and try again.");
       if (rows[0].status !== "scheduled") throw conflict("NOT_SCHEDULED", "Only scheduled shifts can be cancelled.");
       await tx.query(`UPDATE shifts SET status = 'cancelled', version = version + 1, updated_at = now() WHERE id = $1`, [req.params.id]);

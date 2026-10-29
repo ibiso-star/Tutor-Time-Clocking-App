@@ -43,6 +43,22 @@ describe("role and project scoping", () => {
     expect(entries.body.entries.every((e: { tutor: { name: string } }) => e.tutor.name !== "Alan Turing")).toBe(true);
   });
 
+  it("applies team scope to correction detail and shift management", async () => {
+    const sup = await login(env.app, "supervisor@example.com");
+    const alan = await login(env.app, "alan@example.com");
+    const { rows } = await env.db.query(`SELECT id FROM work_sessions WHERE tutor_id = $1 AND state = 'closed' LIMIT 1`, [env.ids.tutors.alan]);
+    const req = await alan.post("/v1/correction-requests", { session_id: rows[0].id, requested_change: { issue: "other" }, explanation: "South team request" });
+    expect(req.status).toBe(201);
+    expect((await sup.get(`/v1/admin/correction-requests/${req.body.id}`)).status).toBe(403);
+    expect((await sup.post(`/v1/admin/correction-requests/${req.body.id}/decision`, { decision: "approve", reason: "Not my team", version: 1 })).status).toBe(403);
+    const start = new Date(Date.now() + 86400_000).toISOString();
+    const end = new Date(Date.now() + 90000_000).toISOString();
+    const shift = await sup.post("/v1/admin/shifts", { project_id: env.ids.projectId, tutor_id: env.ids.tutors.alan, label: "x", scheduled_start: start, scheduled_end: end });
+    expect(shift.status).toBe(403);
+    const own = await sup.post("/v1/admin/shifts", { project_id: env.ids.projectId, tutor_id: env.ids.tutors.grace, label: "Prep", scheduled_start: start, scheduled_end: end });
+    expect(own.status).toBe(201);
+  });
+
   it("restricts settings changes to admins", async () => {
     const sup = await login(env.app, "supervisor@example.com");
     const s = await sup.get(`/v1/admin/projects/${env.ids.projectId}/settings`);

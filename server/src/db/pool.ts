@@ -5,12 +5,8 @@ export type Tx = pg.PoolClient;
 export type Queryable = pg.Pool | pg.PoolClient;
 
 export function createPool(connectionString: string): Db {
-  const pool = new pg.Pool({ connectionString, max: 10 });
   // Sessions always talk UTC; local time is applied explicitly per project timezone.
-  pool.on("connect", (client) => {
-    void client.query("SET TIME ZONE 'UTC'");
-  });
-  return pool;
+  return new pg.Pool({ connectionString, max: 10, options: "-c TimeZone=UTC" });
 }
 
 /**
