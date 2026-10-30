@@ -102,11 +102,16 @@ export async function authRoutes(app: FastifyInstance) {
         );
         await writeAudit(tx, { ...auditContext(req), actorId: null }, { projectId: null, action: "auth.password_reset_requested", targetType: "user", targetId: user.id });
       });
-      await app.mailer.send({
-        to: user.email,
-        subject: "Reset your Tutor Time Clock password",
-        text: `Use this link within ${RESET_TTL_MINUTES} minutes to set a new password:\n${config.appBaseUrl}/reset-password?token=${token}\n\nIf you did not ask for this, you can ignore this email.`,
-      });
+      // A send failure must not change the response, or it would reveal that the account exists.
+      try {
+        await app.mailer.send({
+          to: user.email,
+          subject: "Reset your Tutor Time Clock password",
+          text: `Use this link within ${RESET_TTL_MINUTES} minutes to set a new password:\n${config.appBaseUrl}/reset-password?token=${token}\n\nIf you did not ask for this, you can ignore this email.`,
+        });
+      } catch (err) {
+        req.log.error({ err }, "password reset email failed");
+      }
     }
     // Same response whether or not the account exists, to avoid account enumeration.
     reply.status(202);

@@ -9,6 +9,8 @@ export interface AppConfig {
   databaseSsl: { ca?: string; rejectUnauthorized: boolean } | undefined;
   /** Load demo data on startup when the database is empty (demo deployments only). */
   demoSeed: boolean;
+  /** Transactional email via Resend. Null means emails are only written to the log. */
+  mail: { provider: "resend"; apiKey: string; from: string } | null;
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
@@ -26,5 +28,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
         ? { rejectUnauthorized: false }
         : undefined,
     demoSeed: env.DEMO_SEED === "true",
+    mail: mailConfig(env),
   };
+}
+
+function mailConfig(env: NodeJS.ProcessEnv): AppConfig["mail"] {
+  const apiKey = env.RESEND_API_KEY?.trim();
+  if (!apiKey) return null;
+  const from = env.MAIL_FROM?.trim();
+  if (!from) throw new Error("MAIL_FROM must be set when RESEND_API_KEY is, e.g. \"Tutor Time Clock <noreply@example.org>\".");
+  return { provider: "resend", apiKey, from };
 }

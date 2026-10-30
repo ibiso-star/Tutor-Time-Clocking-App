@@ -74,7 +74,11 @@ function AddPerson({ teams, onDone, onCancel }: { teams: { id: string; name: str
     setError(null);
     try {
       const res = await post("/v1/admin/people", { project_id: projectId, ...f, team_id: f.team_id || null, employee_code: f.employee_code || null });
-      announce(res.invited ? `Invite sent to ${f.email}.` : `${f.display_name} added.`);
+      announce(
+        !res.invited ? `${f.display_name} added.`
+        : res.email_sent === false ? `${f.display_name} added, but the invite email couldn't be sent. They can use "Forgot password" on the sign-in page to set a password.`
+        : `Invite sent to ${f.email}.`,
+      );
       onDone();
     } catch (err) {
       setError(err as ApiError);

@@ -44,7 +44,7 @@ Open http://localhost:5173. Demo accounts all use the password `demo-password-1`
 | `mary@example.com` | Tutor | Missed clock-out from yesterday |
 | `alan@example.com` | Tutor | Clocked out, South Campus |
 
-Password-reset and invite emails are printed to the API log in development (see [Deployment](docs/DEPLOYMENT.md) for production email).
+Password-reset and invite emails are printed to the API log unless Resend is configured (`RESEND_API_KEY` and `MAIL_FROM`; see [Deployment](docs/DEPLOYMENT.md)).
 
 ## Scripts
 

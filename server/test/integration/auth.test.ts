@@ -43,6 +43,18 @@ describe("authentication & session security", () => {
     expect(me.body.csrf_token).toBe(ada.csrf);
   });
 
+  it("answers a reset request the same way when the email provider fails", async () => {
+    const send = env.mailer.send;
+    env.mailer.send = async () => { throw new Error("provider down"); };
+    try {
+      const res = await env.app.inject({ method: "POST", url: "/v1/auth/password-reset/request", payload: { email: "grace@example.com" } });
+      expect(res.statusCode).toBe(202);
+      expect(res.json().message).toBe("If that email has an account, a reset link is on its way.");
+    } finally {
+      env.mailer.send = send;
+    }
+  });
+
   it("supports single-use password reset without revealing account existence", async () => {
     const a = await env.app.inject({ method: "POST", url: "/v1/auth/password-reset/request", payload: { email: "nobody@example.com" } });
     const b = await env.app.inject({ method: "POST", url: "/v1/auth/password-reset/request", payload: { email: "alan@example.com" } });

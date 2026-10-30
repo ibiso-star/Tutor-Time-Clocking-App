@@ -8,7 +8,7 @@ import type { AppConfig } from "./config.js";
 import { ApiError, forbidden } from "./lib/errors.js";
 import type { AuthUser } from "./lib/context.js";
 import { RateLimiter } from "./lib/rateLimit.js";
-import { OutboxMailer, type Mailer } from "./lib/mailer.js";
+import { createMailer, type Mailer } from "./lib/mailer.js";
 import { hashToken } from "./auth/password.js";
 import { authRoutes, SESSION_COOKIE } from "./routes/auth.js";
 import { meRoutes } from "./routes/me.js";
@@ -57,7 +57,7 @@ export async function buildApp(opts: BuildOptions): Promise<FastifyInstance> {
   app.decorate("db", opts.db);
   app.decorate("config", opts.config);
   app.decorate("limiter", new RateLimiter());
-  app.decorate("mailer", opts.mailer ?? new OutboxMailer((m) => app.log.info(m)));
+  app.decorate("mailer", opts.mailer ?? createMailer(opts.config, (m) => app.log.info(m)));
   app.decorateRequest("user", null);
   app.decorateRequest("authSessionId", null);
   app.decorateRequest("csrfToken", null);

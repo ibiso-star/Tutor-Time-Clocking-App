@@ -95,4 +95,23 @@ describe("role and project scoping", () => {
     const roster = await admin.get(`/v1/admin/time-entries?project_id=${env.ids.projectId}&tutor_id=${env.ids.tutors.mary}&from=2020-01-01&to=2020-01-02`);
     expect(roster.status).toBe(200);
   });
+  it("sends invites by email, and still adds the person if the email fails", async () => {
+    const admin = await login(env.app, "admin@example.com");
+    const person = (email: string) => ({ project_id: env.ids.projectId, display_name: "New Tutor", email, role: "tutor", team_id: null, employee_code: null });
+    const ok = await admin.post("/v1/admin/people", person("invitee-ok@example.com"));
+    expect(ok.status).toBe(201);
+    expect(ok.body).toMatchObject({ invited: true, email_sent: true });
+    expect(env.mailer.outbox.at(-1)!.to).toBe("invitee-ok@example.com");
+    const send = env.mailer.send;
+    env.mailer.send = async () => { throw new Error("provider down"); };
+    try {
+      const failed = await admin.post("/v1/admin/people", person("invitee-fail@example.com"));
+      expect(failed.status).toBe(201);
+      expect(failed.body).toMatchObject({ invited: true, email_sent: false });
+      const { rows } = await env.db.query(`SELECT status FROM users WHERE email = 'invitee-fail@example.com'`);
+      expect(rows[0].status).toBe("invited");
+    } finally {
+      env.mailer.send = send;
+    }
+  });
 });

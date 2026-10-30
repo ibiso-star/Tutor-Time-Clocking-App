@@ -210,15 +210,22 @@ export async function manageRoutes(app: FastifyInstance) {
       });
       return { user_id: userId, membership_id: m.rows[0]!.id };
     });
+    // The person is saved either way. If the email fails, they can still use "Forgot password".
+    let emailSent = false;
     if (inviteToken) {
-      await app.mailer.send({
-        to: email,
-        subject: "You've been invited to Tutor Time Clock",
-        text: `Set your password within 7 days to get started:\n${app.config.appBaseUrl}/reset-password?token=${inviteToken}`,
-      });
+      try {
+        await app.mailer.send({
+          to: email,
+          subject: "You've been invited to Tutor Time Clock",
+          text: `Set your password within 7 days to get started:\n${app.config.appBaseUrl}/reset-password?token=${inviteToken}`,
+        });
+        emailSent = true;
+      } catch (err) {
+        req.log.error({ err }, "invite email failed");
+      }
     }
     reply.status(201);
-    return { ...result, invited: Boolean(inviteToken) };
+    return { ...result, invited: Boolean(inviteToken), email_sent: emailSent };
   });
 
   const membershipPatch = z.object({

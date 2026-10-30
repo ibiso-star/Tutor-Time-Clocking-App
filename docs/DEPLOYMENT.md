@@ -48,6 +48,8 @@ The repository deploys to Vercel as static files plus one serverless function, w
 | `NODE_ENV` | `production` |
 | `APP_BASE_URL` | The production URL, used in reset/invite links |
 | `DEMO_SEED` | `true` only for a public demo: seeds demo data into an empty database on first start |
+| `RESEND_API_KEY` | API key from [Resend](https://resend.com) (sending access is enough). Turns on real invite and password-reset emails. Without it, emails are only written to the function logs. |
+| `MAIL_FROM` | Required with `RESEND_API_KEY`: the sender, on a domain verified in Resend, e.g. `Tutor Time Clock <noreply@example.org>` |
 
 **Differences from the long-running server:**
 - No migrations on start: apply them before deploying a new schema.
@@ -61,7 +63,7 @@ These are organisational decisions. The software defaults are safe, but they are
 - [ ] Payroll owner validates the CSV columns and a sample export; confirm the rounding policy is lawful in your jurisdiction.
 - [ ] Retention period and legal-hold process agreed. `retention_days` is recorded but **nothing is deleted automatically**.
 - [ ] Privacy review done before enabling location controls; tutors informed.
-- [ ] Replace the development mailer with a transactional email provider. Implement the `Mailer` interface in `server/src/lib/mailer.ts` and pass it to `buildApp`.
+- [ ] Turn on email: verify your sending domain in Resend, then set `RESEND_API_KEY` and `MAIL_FROM`. Send yourself a password reset to confirm delivery. If a send fails, the person is still added and the failure is logged (`invite email failed` / `password reset email failed`); they can use "Forgot password" to get a new link.
 - [ ] Decide on identity: keep local passwords, or front the app with your SSO/OIDC provider (and MFA).
 - [ ] Backup and restore drill completed; alert on `/healthz` failures and on 5xx rates for `POST /v1/clock-events`.
 - [ ] Remove or never load demo data. `npm run db:seed` refuses to run when `NODE_ENV=production`.
