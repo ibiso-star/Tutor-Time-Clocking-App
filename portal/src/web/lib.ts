@@ -90,3 +90,34 @@ export function hm(seconds: number) {
 export function fragmentParam(name: string): string | null {
   return new URLSearchParams(location.hash.slice(1)).get(name);
 }
+
+export const BRAND = "ShiftSnap";
+
+/** Logo mark + wordmark. The mark is drawn in CSS so it inherits the theme. */
+export function brand(suffix?: string) {
+  return h("div", { class: "brand" },
+    h("span", { class: "logo", "aria-hidden": "true" }),
+    h("span", { class: "brand-name" }, BRAND, suffix ? h("span", { class: "brand-suffix" }, suffix) : null),
+  );
+}
+
+export function greeting(d = new Date()) {
+  const hour = d.getHours();
+  return hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
+}
+
+export const fmtDate = (d: Date, tz?: string) =>
+  new Intl.DateTimeFormat(undefined, { timeZone: tz, weekday: "long", day: "numeric", month: "long" }).format(d);
+
+/** Short-lived confirmation or error that doesn't move focus. Errors are announced assertively. */
+export function toast(message: string, kind: "ok" | "error" = "ok") {
+  let region = document.getElementById("toasts");
+  if (!region) {
+    region = h("div", { id: "toasts", class: "toasts" });
+    document.body.append(region);
+  }
+  const t = h("div", { class: `toast ${kind}`, role: kind === "error" ? "alert" : "status" }, message);
+  region.append(t);
+  setTimeout(() => t.classList.add("leaving"), kind === "error" ? 6000 : 3200);
+  setTimeout(() => t.remove(), kind === "error" ? 6400 : 3600);
+}

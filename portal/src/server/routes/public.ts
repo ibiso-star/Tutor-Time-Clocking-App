@@ -4,7 +4,7 @@ import { DateTime } from "luxon";
 import { ApiError } from "../errors.js";
 import { employeeByBadge, requireKiosk, requireLink } from "../auth.js";
 import { hashIp } from "../credentials.js";
-import { workedSeconds, type State } from "../domain.js";
+import { dailyWorked, workedSeconds, type State } from "../domain.js";
 import { EVENT_SELECT, toEventDto, type EventRow } from "../events.js";
 import { punch, type PunchResult } from "../punch.js";
 import { deliverDue } from "../webhooks.js";
@@ -59,6 +59,15 @@ export async function publicRoutes(app: FastifyInstance, deps: AppDeps) {
       `${EVENT_SELECT} WHERE e.employee_id = $1 AND (e.occurred_at >= $2 OR e.session_id = $3) ORDER BY e.seq`,
       [who.employeeId, from, emp[0]!.open_session_id],
     );
+    // The last 7 days (today included), from whole sessions so time is clipped correctly at midnight.
+    const weekStart = day.minus({ days: 6 });
+    const { rows: weekRows } = await db.query<{ event_type: EventRow["event_type"]; occurred_at: Date }>(
+      `SELECT event_type, occurred_at FROM shift.events WHERE employee_id = $1 AND session_id IN (
+          SELECT DISTINCT session_id FROM shift.events WHERE employee_id = $1 AND occurred_at >= $2::timestamptz - interval '2 days')
+        ORDER BY seq`,
+      [who.employeeId, weekStart.toJSDate()],
+    );
+    const week = dailyWorked(weekRows.map((r) => ({ type: r.event_type, at: r.occurred_at })), weekStart, 7, now);
     return {
       employee: { display_name: who.displayName },
       state: emp[0]!.state,
@@ -67,6 +76,7 @@ export async function publicRoutes(app: FastifyInstance, deps: AppDeps) {
         worked_seconds: workedSeconds(rows.map((r) => ({ type: r.event_type, at: r.occurred_at })), from, to, now),
         events: rows.filter((r) => r.occurred_at >= from).map(toEventDto),
       },
+      week: { worked_seconds: week.reduce((t, d) => t + d.worked_seconds, 0), days: week },
       timezone: config.timezone,
       server_time: now.toISOString(),
     };
