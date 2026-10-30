@@ -1,0 +1,41 @@
+{
+  "name": "shift-portal",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Zero-login shift tracker: personal secure links and a shared kiosk, with a REST + webhook integration surface.",
+  "type": "module",
+  "engines": {
+    "node": "22.x"
+  },
+  "scripts": {
+    "dev": "concurrently -n api,web \"npm:dev:api\" \"npm:dev:web\"",
+    "dev:api": "tsx watch src/server/index.ts",
+    "dev:web": "vite --config vite.config.ts",
+    "build": "npm run build:api && npm run build:web",
+    "build:api": "tsc -p tsconfig.build.json && cp -r src/server/migrations dist/server/",
+    "build:web": "vite build --config vite.config.ts",
+    "start": "node dist/server/index.js",
+    "db:migrate": "tsx src/server/migrate.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p src/web/tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "fastify": "^5.12.7",
+    "luxon": "^3.7.2",
+    "pg": "^8.23.1",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/luxon": "^3.7.6",
+    "@types/node": "^22.20.5",
+    "@types/pg": "^8.23.1",
+    "@types/qrcode": "^1.5.6",
+    "concurrently": "^10.0.6",
+    "jsqr": "^1.4.0",
+    "qrcode": "^1.5.4",
+    "tsx": "^4.23.15",
+    "typescript": "5.9",
+    "vite": "^8.3.5",
+    "vitest": "^5.0.5"
+  }
+}

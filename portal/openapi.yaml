@@ -1,0 +1,294 @@
+openapi: 3.1.0
+info:
+  title: Shift Portal API
+  version: 1.0.0
+  description: |
+    Zero-login shift tracking. Every request carries its own credential; the server keeps no sessions.
+
+    Credentials (send exactly one, in the `Authorization` header):
+    - `Link <token>`   — an employee's personal link token. Acts only as that employee.
+    - `Kiosk <token>`  — a paired kiosk device. Acts for any employee who presents their badge code.
+    - `Bearer <key>`   — the integration/admin API key. Manages employees, kiosks and reads events.
+
+    All instants are UTC ISO-8601. The server's clock is the official time; `client_time` is stored
+    only as untrusted context. Every punch requires an `Idempotency-Key` header (UUID): retries with
+    the same key return the original result and never record twice.
+
+    Integration with a central system:
+    - **Pull:** `GET /api/v1/events?after=<cursor>` returns an ordered, append-only feed.
+    - **Push:** each event is delivered to `WEBHOOK_URL` signed per the Standard Webhooks spec
+      (`webhook-id`, `webhook-timestamp`, `webhook-signature: v1,<base64 HMAC-SHA256>`), with retries.
+    - Employees carry an optional `external_ref` for mapping to the central system's user ids.
+servers:
+  - url: /
+tags:
+  - name: Punch
+  - name: Kiosk
+  - name: Admin
+  - name: Integration
+paths:
+  /api/v1/me:
+    get:
+      tags: [Punch]
+      summary: Current state for the employee identified by a personal link
+      security: [{ link: [] }]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/EmployeeStatus" } } } }
+        "401": { $ref: "#/components/responses/Error" }
+  /api/v1/punch:
+    post:
+      tags: [Punch]
+      summary: Record a punch for the employee identified by a personal link
+      security: [{ link: [] }]
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/PunchRequest" } } }
+      responses:
+        "201": { description: Recorded, content: { application/json: { schema: { $ref: "#/components/schemas/PunchResult" } } } }
+        "200": { description: Idempotent replay of an earlier request, content: { application/json: { schema: { $ref: "#/components/schemas/PunchResult" } } } }
+        "409": { $ref: "#/components/responses/Error" }
+  /api/v1/kiosk/identify:
+    post:
+      tags: [Kiosk]
+      summary: Identify an employee by badge code at a paired kiosk (no history is returned)
+      security: [{ kiosk: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, required: [badge], properties: { badge: { type: string } } } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/KioskIdentity" } } } }
+        "404": { $ref: "#/components/responses/Error" }
+  /api/v1/kiosk/punch:
+    post:
+      tags: [Kiosk]
+      summary: Record a punch at a paired kiosk
+      security: [{ kiosk: [] }]
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/PunchRequest"
+                - { type: object, required: [badge], properties: { badge: { type: string } } }
+      responses:
+        "201": { description: Recorded, content: { application/json: { schema: { $ref: "#/components/schemas/PunchResult" } } } }
+        "200": { description: Idempotent replay, content: { application/json: { schema: { $ref: "#/components/schemas/PunchResult" } } } }
+        "409": { $ref: "#/components/responses/Error" }
+  /api/v1/employees:
+    get:
+      tags: [Admin]
+      summary: List employees with their current state
+      security: [{ apiKey: [] }]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: object, properties: { employees: { type: array, items: { $ref: "#/components/schemas/Employee" } } } } } } }
+    post:
+      tags: [Admin]
+      summary: Create an employee. Returns their personal link and badge code once.
+      security: [{ apiKey: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/EmployeeInput" } } }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/EmployeeCredentials" } } } }
+  /api/v1/employees/{id}:
+    patch:
+      tags: [Admin]
+      summary: Update name, external reference, or enable/disable link and kiosk access
+      security: [{ apiKey: [] }]
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/EmployeePatch" } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Employee" } } } }
+  /api/v1/employees/{id}/credentials:
+    post:
+      tags: [Admin]
+      summary: Rotate an employee's personal link and/or badge code. Old values stop working immediately.
+      security: [{ apiKey: [] }]
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, properties: { link: { type: boolean }, badge: { type: boolean } } } } }
+      responses:
+        "200": { description: New credentials (shown once), content: { application/json: { schema: { $ref: "#/components/schemas/EmployeeCredentials" } } } }
+  /api/v1/kiosks:
+    get:
+      tags: [Admin]
+      summary: List kiosks
+      security: [{ apiKey: [] }]
+      responses:
+        "200": { description: OK }
+    post:
+      tags: [Admin]
+      summary: Create a kiosk. Returns its pairing token once.
+      security: [{ apiKey: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, required: [name], properties: { name: { type: string, maxLength: 80 } } } } }
+      responses:
+        "201": { description: Created }
+  /api/v1/kiosks/{id}/revoke:
+    post:
+      tags: [Admin]
+      summary: Revoke a kiosk. Its token stops working immediately.
+      security: [{ apiKey: [] }]
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { description: OK }
+  /api/v1/events:
+    get:
+      tags: [Integration]
+      summary: Append-only event feed for pull-based integration
+      description: Ordered by `seq`. Pass the last `next_cursor` as `after` to continue; an empty page means you are caught up.
+      security: [{ apiKey: [] }]
+      parameters:
+        - { name: after, in: query, schema: { type: integer, minimum: 0, default: 0 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 500, default: 100 } }
+        - { name: employee_id, in: query, schema: { type: string, format: uuid } }
+        - { name: order, in: query, description: "`desc` returns the most recent events first (for display). Use `asc` with `after` for syncing.", schema: { type: string, enum: [asc, desc], default: asc } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  events: { type: array, items: { $ref: "#/components/schemas/ShiftEvent" } }
+                  next_cursor: { type: integer }
+  /api/v1/timesheet:
+    get:
+      tags: [Integration]
+      summary: Worked time per employee per local day, derived from events
+      security: [{ apiKey: [] }]
+      parameters:
+        - { name: from, in: query, required: true, schema: { type: string, format: date } }
+        - { name: to, in: query, required: true, schema: { type: string, format: date } }
+        - { name: format, in: query, schema: { type: string, enum: [json, csv], default: json } }
+      responses:
+        "200": { description: OK }
+  /api/v1/webhooks/status:
+    get:
+      tags: [Integration]
+      summary: Webhook outbox status (pending, failed, delivered counts and recent errors)
+      security: [{ apiKey: [] }]
+      responses:
+        "200": { description: OK }
+  /api/v1/webhooks/deliver:
+    post:
+      tags: [Integration]
+      summary: Deliver due webhook messages now (call from a scheduler on serverless hosts)
+      security: [{ apiKey: [] }]
+      responses:
+        "200": { description: OK }
+  /api/v1/openapi.yaml:
+    get:
+      tags: [Integration]
+      summary: This document
+      responses:
+        "200": { description: OK }
+components:
+  securitySchemes:
+    link: { type: apiKey, in: header, name: Authorization, description: "`Link <token>`" }
+    kiosk: { type: apiKey, in: header, name: Authorization, description: "`Kiosk <token>`" }
+    apiKey: { type: http, scheme: bearer }
+  parameters:
+    Id: { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    IdempotencyKey: { name: Idempotency-Key, in: header, required: true, schema: { type: string, format: uuid } }
+  responses:
+    Error:
+      description: Error
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: object
+                properties:
+                  code: { type: string, examples: [ALREADY_CLOCKED_IN, NOT_ON_BREAK, INVALID_CREDENTIAL, IDEMPOTENCY_KEY_REUSED] }
+                  message: { type: string }
+  schemas:
+    State: { type: string, enum: [OUT, IN, BREAK] }
+    Action: { type: string, enum: [CLOCK_IN, BREAK_START, BREAK_END, CLOCK_OUT] }
+    EventType: { type: string, enum: [clock_in, break_start, break_end, clock_out] }
+    PunchRequest:
+      type: object
+      required: [action]
+      properties:
+        action: { $ref: "#/components/schemas/Action" }
+        end_break: { type: boolean, description: "With CLOCK_OUT while on break, also records the break end (as its own event)." }
+        client_time: { type: string, format: date-time, description: Untrusted device time, stored for context only. }
+    PunchResult:
+      type: object
+      properties:
+        event: { $ref: "#/components/schemas/ShiftEvent" }
+        state: { $ref: "#/components/schemas/State" }
+        replayed: { type: boolean }
+    ShiftEvent:
+      type: object
+      description: Also the webhook payload `data`. Stable, versioned contract for the central system.
+      properties:
+        id: { type: string, format: uuid }
+        seq: { type: integer, description: Monotonic feed position }
+        type: { $ref: "#/components/schemas/EventType" }
+        occurred_at: { type: string, format: date-time, description: Official server time }
+        employee: { type: object, properties: { id: { type: string, format: uuid }, external_ref: { type: [string, "null"] }, display_name: { type: string } } }
+        session_id: { type: string, format: uuid, description: Groups the events of one shift from clock_in to clock_out }
+        source: { type: string, enum: [link, kiosk, api] }
+        kiosk_id: { type: [string, "null"], format: uuid }
+        state_after: { $ref: "#/components/schemas/State" }
+        client_time: { type: [string, "null"], format: date-time }
+    EmployeeStatus:
+      type: object
+      properties:
+        employee: { type: object, properties: { display_name: { type: string } } }
+        state: { $ref: "#/components/schemas/State" }
+        since: { type: [string, "null"], format: date-time }
+        today: { type: object, properties: { worked_seconds: { type: integer }, events: { type: array, items: { $ref: "#/components/schemas/ShiftEvent" } } } }
+        timezone: { type: string }
+        server_time: { type: string, format: date-time }
+    KioskIdentity:
+      type: object
+      properties:
+        display_name: { type: string }
+        state: { $ref: "#/components/schemas/State" }
+        since: { type: [string, "null"], format: date-time }
+    Employee:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        display_name: { type: string }
+        external_ref: { type: [string, "null"] }
+        link_enabled: { type: boolean }
+        kiosk_enabled: { type: boolean }
+        active: { type: boolean }
+        state: { $ref: "#/components/schemas/State" }
+        since: { type: [string, "null"], format: date-time }
+    EmployeeInput:
+      type: object
+      required: [display_name]
+      properties:
+        display_name: { type: string, maxLength: 120 }
+        external_ref: { type: [string, "null"], maxLength: 120 }
+        link_enabled: { type: boolean, default: true }
+        kiosk_enabled: { type: boolean, default: true }
+    EmployeePatch:
+      type: object
+      properties:
+        display_name: { type: string, maxLength: 120 }
+        external_ref: { type: [string, "null"], maxLength: 120 }
+        link_enabled: { type: boolean }
+        kiosk_enabled: { type: boolean }
+        active: { type: boolean }
+    EmployeeCredentials:
+      type: object
+      description: Plain credentials are returned only here, once. The server stores only hashes.
+      properties:
+        employee: { $ref: "#/components/schemas/Employee" }
+        link_url: { type: [string, "null"] }
+        badge_code: { type: [string, "null"] }
