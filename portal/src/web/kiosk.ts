@@ -1,4 +1,4 @@
-import { actionsFor, announce, api, ApiError, DONE_TEXT, fmtTimeSec, fragmentParam, h, mount, STATE_TEXT, type Action, type State } from "./lib";
+import { actionsFor, announce, api, ApiError, BRAND, brand, DONE_TEXT, fmtDate, fmtTime, fmtTimeSec, fragmentParam, greeting, h, mount, STATE_TEXT, type Action, type State } from "./lib";
 
 const STORE = "shift.kiosk";
 const BADGE_PREFIX = "shiftbadge:";
@@ -21,7 +21,7 @@ export function badgeFromScan(text: string): string | null {
 type Screen =
   | { kind: "idle"; error?: string }
   | { kind: "scan" }
-  | { kind: "who"; badge: string; name: string; state: State; error?: string; busy?: Action; pending?: { action: Action; endBreak?: boolean; key: string } }
+  | { kind: "who"; badge: string; name: string; state: State; since: string | null; error?: string; busy?: Action; pending?: { action: Action; endBreak?: boolean; key: string } }
   | { kind: "done"; name: string; text: string };
 
 export function start() {
@@ -32,9 +32,9 @@ export function start() {
     history.replaceState(null, "", "/kiosk");
   }
   const token = read();
-  document.title = "Kiosk · Shift";
+  document.title = `Kiosk · ${BRAND}`;
   if (!token) {
-    mount(h("div", { class: "kiosk" }, h("div", { class: "kiosk-stage" }, h("div", { class: "kiosk-card" },
+    mount(h("div", { class: "kiosk" }, h("div", { class: "kiosk-top" }, brand("Kiosk")), h("div", { class: "kiosk-stage" }, h("div", { class: "kiosk-card" },
       h("h1", {}, "This tablet isn't set up yet"),
       h("p", {}, "Ask an administrator to open the kiosk pairing link on this device."),
     ))));
@@ -45,7 +45,11 @@ export function start() {
   let timeout: number | undefined;
   let stopCamera: (() => void) | null = null;
   const clock = h("div", { class: "kiosk-clock", "aria-hidden": "true" });
-  const updateClock = () => (clock.textContent = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).format(new Date()));
+  const date = h("div", { class: "muted" });
+  const updateClock = () => {
+    clock.textContent = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).format(new Date());
+    date.textContent = fmtDate(new Date());
+  };
   updateClock();
   setInterval(updateClock, 5000);
   keepAwake();
@@ -61,8 +65,8 @@ export function start() {
 
   const identify = async (badge: string) => {
     try {
-      const who = await api<{ display_name: string; state: State }>("POST", "/api/v1/kiosk/identify", auth, { badge });
-      go({ kind: "who", badge, name: who.display_name, state: who.state }, IDLE_AFTER_MS);
+      const who = await api<{ display_name: string; state: State; since: string | null }>("POST", "/api/v1/kiosk/identify", auth, { badge });
+      go({ kind: "who", badge, name: who.display_name, state: who.state, since: who.since }, IDLE_AFTER_MS);
       announce(`${who.display_name}, ${STATE_TEXT[who.state]}`);
     } catch (e) {
       const err = e as ApiError;
@@ -99,14 +103,17 @@ export function start() {
     const stage = h("div", { class: "kiosk-stage" });
     const card = h("div", { class: "kiosk-card pop" });
     stage.append(card);
+    const localTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
     if (screen.kind === "idle") {
       const input = h("input", { type: "text", class: "code-input", id: "code", autocomplete: "off", autocapitalize: "characters", spellcheck: "false", maxlength: "20", placeholder: "XXXX-XXXX-XXXX", "aria-describedby": screen.error ? "kerr" : undefined }) as HTMLInputElement;
       card.append(
-        h("h1", {}, "Tap to clock in or out"),
-        screen.error ? h("div", { class: "notice error", role: "alert", id: "kerr" }, h("p", {}, screen.error)) : "",
-        h("div", { class: "actions" }, h("button", { class: "btn btn-primary", onclick: () => go({ kind: "scan" }, IDLE_AFTER_MS) }, "Scan my badge")),
-        h("form", { style: "margin-top:1.5rem", onsubmit: (ev: Event) => { ev.preventDefault(); if (input.value.trim()) void identify(input.value); } },
-          h("label", { for: "code" }, "Or type your badge code"),
+        h("p", { class: "muted", style: "font-weight:600" }, greeting()),
+        h("h1", {}, "Clock in or out"),
+        screen.error ? h("div", { class: "notice error", role: "alert", id: "kerr", style: "text-align:left" }, h("p", {}, screen.error)) : "",
+        h("div", { class: "actions", style: "margin-top:1.25rem" }, h("button", { class: "btn btn-primary", onclick: () => go({ kind: "scan" }, IDLE_AFTER_MS) }, "Scan my badge")),
+        h("div", { class: "kiosk-or" }, "or"),
+        h("form", { onsubmit: (ev: Event) => { ev.preventDefault(); if (input.value.trim()) void identify(input.value); } },
+          h("label", { for: "code" }, "Type your badge code"),
           h("div", { class: "btn-row", style: "flex-wrap:nowrap" }, input, h("button", { class: "btn", type: "submit" }, "Continue")),
         ),
       );
@@ -120,20 +127,28 @@ export function start() {
     } else if (screen.kind === "who") {
       const s = screen;
       card.append(
-        h("p", { class: "muted" }, "Hello"),
+        h("p", { class: "muted", style: "font-weight:600" }, "Hello"),
         h("h1", {}, s.name),
-        h("p", {}, h("span", { class: `pill ${s.state}` }, STATE_TEXT[s.state])),
-        s.error ? h("div", { class: "notice error", role: "alert" }, h("p", {}, s.error)) : "",
+        h("p", {}, h("span", { class: `pill ${s.state}` }, STATE_TEXT[s.state]),
+          s.since && s.state !== "OUT" ? h("span", { class: "muted" }, ` since ${fmtTime(s.since, localTz)}`) : null),
+        s.error ? h("div", { class: "notice error", role: "alert", style: "text-align:left" }, h("p", {}, s.error)) : "",
         h("div", { class: "actions", style: "margin-top:1rem" },
-          ...actionsFor(s.state).map((a) => h("button", { class: `btn ${a.kind}`, disabled: !!s.busy, onclick: () => doPunch(a.action, a.endBreak) }, s.busy === a.action ? "Saving…" : a.label)),
+          ...actionsFor(s.state).map((a) => h("button", { class: `btn ${a.action === "CLOCK_IN" ? "btn-go" : a.kind}`, disabled: !!s.busy, onclick: () => doPunch(a.action, a.endBreak) },
+            s.busy === a.action ? h("span", { class: "spinner", "aria-hidden": "true" }) : null, s.busy === a.action ? "Saving…" : a.label)),
         ),
         h("button", { class: "btn btn-quiet", style: "margin-top:1rem", onclick: () => go({ kind: "idle" }) }, "Not you? Start again"),
       );
     } else {
-      card.append(h("div", { class: "big-tick", "aria-hidden": "true" }, "✓"), h("h1", {}, screen.name), h("p", { style: "font-size:1.4rem" }, screen.text));
+      card.append(
+        h("div", { class: "big-tick", "aria-hidden": "true" }, "✓"),
+        h("h1", {}, screen.name),
+        h("p", { style: "font-size:1.4rem;margin:0" }, screen.text),
+        h("div", { class: "countdown", "aria-hidden": "true", style: `--dur:${DONE_AFTER_MS}ms` }),
+      );
+      card.addEventListener("click", () => go({ kind: "idle" }));
     }
-    mount(h("div", { class: "kiosk" }, h("div", { class: "kiosk-top" }, clock, h("span", { class: "muted small" }, "Shift kiosk")), stage));
-    (card.querySelector("input, .btn-primary") as HTMLElement | null)?.focus();
+    mount(h("div", { class: "kiosk" }, h("div", { class: "kiosk-top" }, brand("Kiosk"), h("div", { class: "kiosk-time" }, clock, date)), stage));
+    (card.querySelector("input, .btn-primary, .btn-go") as HTMLElement | null)?.focus();
   }
 
   render();

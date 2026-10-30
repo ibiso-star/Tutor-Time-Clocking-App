@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { DateTime } from "luxon";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { admin, call, createEmployee, punchLink, setup, API_KEY } from "./helpers.js";
 
@@ -33,6 +34,9 @@ describe("personal links", () => {
     expect(me.body.today.events.map((x: any) => x.type)).toEqual(["clock_in", "break_start", "break_end", "clock_out"]);
     expect(new Set(me.body.today.events.map((x: any) => x.session_id)).size).toBe(1);
     expect(me.body.timezone).toBe("Europe/London");
+    expect(me.body.week.days).toHaveLength(7);
+    expect(me.body.week.days[6].date).toBe(DateTime.now().setZone("Europe/London").toISODate());
+    expect(me.body.week.worked_seconds).toBe(me.body.today.worked_seconds);
   });
 
   it("is idempotent and safe under concurrent taps", async () => {
@@ -151,6 +155,26 @@ describe("integration surface", () => {
     expect(csv.headers["content-type"]).toContain("text/csv");
     expect(csv.raw).toContain(`"'=HYPERLINK(""x"")"`);
     expect(csv.raw).toContain(",450.00,Europe/London");
+  });
+
+  it("gives a live overview of who is on shift and today's time", async () => {
+    const on = await createEmployee(env.app, "Overview On");
+    const brk = await createEmployee(env.app, "Overview Break");
+    await punchLink(env.app, on.token, "CLOCK_IN");
+    await punchLink(env.app, brk.token, "CLOCK_IN");
+    await punchLink(env.app, brk.token, "BREAK_START");
+    const res = await admin(env.app, "GET", "/api/v1/overview");
+    expect(res.status).toBe(200);
+    const byName = Object.fromEntries(res.body.people.map((p: any) => [p.display_name, p]));
+    expect(byName["Overview On"]).toMatchObject({ state: "IN", today_worked_seconds: expect.any(Number) });
+    expect(byName["Overview On"].since).not.toBeNull();
+    expect(byName["Overview Break"].state).toBe("BREAK");
+    expect(res.body.counts.IN).toBeGreaterThanOrEqual(1);
+    expect(res.body.counts.BREAK).toBeGreaterThanOrEqual(1);
+    expect(res.body.today.punches).toBeGreaterThanOrEqual(3);
+    expect(res.body.timezone).toBe("Europe/London");
+    expect((await call(env.app, "GET", "/api/v1/overview")).status).toBe(401);
+    expect((await call(env.app, "GET", "/api/v1/overview", `Link ${on.token}`)).status).toBe(401);
   });
 
   it("serves the OpenAPI contract", async () => {

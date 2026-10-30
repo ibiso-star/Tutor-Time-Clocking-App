@@ -1,3 +1,5 @@
+import type { DateTime } from "luxon";
+
 /**
  * Shift state machine: OUT -> IN -> BREAK -> IN -> OUT (and IN -> OUT).
  * BREAK -> OUT only with an explicit end_break flag, which records the break end as its own event.
@@ -59,4 +61,13 @@ export function workedSeconds(events: TimedEvent[], from: Date, to: Date, now: D
   }
   if (workingSince) add(workingSince, now);
   return Math.floor(total / 1000);
+}
+
+/** Worked seconds per calendar day in `zone`, for `days` consecutive days starting at `firstDay` (an ISO date). */
+export function dailyWorked(events: TimedEvent[], firstDay: DateTime, days: number, now: Date): Array<{ date: string; worked_seconds: number }> {
+  const out: Array<{ date: string; worked_seconds: number }> = [];
+  for (let i = 0, d = firstDay.startOf("day"); i < days; i++, d = d.plus({ days: 1 })) {
+    out.push({ date: d.toISODate()!, worked_seconds: workedSeconds(events, d.toJSDate(), d.plus({ days: 1 }).toJSDate(), now) });
+  }
+  return out;
 }

@@ -1,10 +1,11 @@
-import { actionsFor, announce, api, ApiError, DONE_TEXT, EVENT_TEXT, fmtTime, fmtTimeSec, fragmentParam, h, hms, mount, STATE_TEXT, type Action, type State } from "./lib";
+import { actionsFor, announce, api, ApiError, BRAND, brand, DONE_TEXT, EVENT_TEXT, fmtDate, fmtTime, fmtTimeSec, fragmentParam, greeting, h, hm, hms, mount, STATE_TEXT, type Action, type State } from "./lib";
 
 interface Me {
   employee: { display_name: string };
   state: State;
   since: string | null;
   today: { worked_seconds: number; events: Array<{ id: string; type: string; occurred_at: string; source: string }> };
+  week?: { worked_seconds: number; days: Array<{ date: string; worked_seconds: number }> };
   timezone: string;
   server_time: string;
 }
@@ -16,7 +17,7 @@ interface Me {
 export function start() {
   const token = fragmentParam("t");
   if (!token) {
-    mount(h("div", { class: "solo" }, h("h1", {}, "This link is incomplete"), h("p", {}, "Open the full link your manager sent you. It ends with a long code.")));
+    mount(h("div", { class: "solo" }, h("div", { class: "topbar" }, brand()), h("div", { class: "card" }, h("h1", {}, "This link is incomplete"), h("p", {}, "Open the full link your manager sent you. It ends with a long code."))));
     return;
   }
   const auth = `Link ${token}`;
@@ -33,7 +34,7 @@ export function start() {
       me = await api<Me>("GET", "/api/v1/me", auth);
       loadedAt = Date.now();
       skewMs = new Date(me.server_time).getTime() - Date.now();
-      document.title = `${STATE_TEXT[me.state]} · Shift`;
+      document.title = `${STATE_TEXT[me.state]} · ${BRAND}`;
     } catch (e) {
       message = { kind: "error", text: (e as ApiError).message };
     }
@@ -88,39 +89,68 @@ export function start() {
 
   function render() {
     if (!me) {
-      mount(h("div", { class: "solo" }, message ? h("div", { class: "notice error", role: "alert" }, h("p", {}, message.text)) : h("p", { class: "muted" }, "Loading…")));
+      mount(h("div", { class: "solo" }, h("div", { class: "topbar" }, brand()),
+        message ? h("div", { class: "notice error", role: "alert" }, h("p", {}, message.text)) : h("p", { class: "muted" }, h("span", { class: "spinner", "aria-hidden": "true", style: "display:inline-block;vertical-align:-.2em;margin-right:.5rem" }), "Loading…")));
       return;
     }
     const offline = !navigator.onLine;
     tick();
     const tz = me.timezone;
+    const first = me.employee.display_name.split(" ")[0];
     mount(
       h("div", { class: "solo" },
-        h("p", { class: "hello" }, `Hi ${me.employee.display_name.split(" ")[0]}`),
-        h("h1", { class: `state ${me.state}` }, STATE_TEXT[me.state]),
-        timerEl,
-        h("p", { class: "sub" },
-          me.state === "BREAK" ? `On break since ${fmtTime(me.since!, tz)}` : me.state === "IN" ? `Worked today. On shift since ${fmtTime(me.since!, tz)}.` : me.today.worked_seconds ? "Worked today" : "Ready when you are.",
-        ),
-        offline && h("div", { class: "notice warn", role: "status" }, h("p", {}, "You're offline. Punches need a connection so the official time can be recorded.")),
-        message && h("div", { class: `notice ${message.kind} pop`, role: message.kind === "error" ? "alert" : "status" },
-          h("p", {}, message.text),
-          message.kind === "error" && pending && h("button", { class: "btn", onclick: () => doPunch(pending!.action, pending!.endBreak), disabled: offline }, "Try again"),
-        ),
-        h("div", { class: "actions" },
-          ...actionsFor(me.state).map((a) =>
-            h("button", { class: `btn ${a.kind}`, disabled: !!busy || offline, onclick: () => doPunch(a.action, a.endBreak) }, busy === a.action ? "Saving…" : a.label),
+        h("div", { class: "topbar" }, brand(), h("span", { class: "muted small" }, fmtDate(new Date(), tz))),
+        h("p", { class: "hello" }, `${greeting()}, ${first}`),
+        h("section", { class: `card status ${me.state}`, "aria-labelledby": "state-h" },
+          h("h1", { id: "state-h", class: `state ${me.state}` }, me.state !== "OUT" && h("span", { class: "live-dot", "aria-hidden": "true" }), STATE_TEXT[me.state]),
+          timerEl,
+          h("p", { class: "sub" },
+            me.state === "BREAK" ? `On break since ${fmtTime(me.since!, tz)}` : me.state === "IN" ? `Worked today · on shift since ${fmtTime(me.since!, tz)}` : me.today.worked_seconds ? "Worked today" : "Ready when you are.",
+          ),
+          offline && h("div", { class: "notice warn", role: "status", style: "text-align:left" }, h("p", {}, "You're offline. Punches need a connection so the official time can be recorded.")),
+          message && h("div", { class: `notice ${message.kind} pop`, role: message.kind === "error" ? "alert" : "status", style: "text-align:left" },
+            h("p", {}, message.text),
+            message.kind === "error" && pending && h("button", { class: "btn btn-sm", onclick: () => doPunch(pending!.action, pending!.endBreak), disabled: offline }, "Try again"),
+          ),
+          h("div", { class: "actions" },
+            ...actionsFor(me.state).map((a) =>
+              h("button", { class: `btn ${a.action === "CLOCK_IN" ? "btn-go" : a.kind}`, disabled: !!busy || offline, "aria-busy": busy === a.action ? "true" : undefined, onclick: () => doPunch(a.action, a.endBreak) },
+                busy === a.action ? h("span", { class: "spinner", "aria-hidden": "true" }) : null, busy === a.action ? "Saving…" : a.label),
+            ),
           ),
         ),
-        me.today.events.length > 0 && h("section", { class: "day", "aria-labelledby": "today-h" },
-          h("h2", { id: "today-h" }, "Today"),
-          h("ol", {}, ...me.today.events.map((e) => h("li", { "data-t": e.type }, h("strong", {}, EVENT_TEXT[e.type] ?? e.type), " ", h("span", { class: "num" }, fmtTime(e.occurred_at, tz)), e.source === "kiosk" ? h("span", { class: "muted small" }, " at the kiosk") : null))),
+        me.week && weekCard(me.week, tz),
+        me.today.events.length > 0 && h("section", { class: "card day", "aria-labelledby": "today-h" },
+          h("div", { class: "card-head" }, h("h2", { id: "today-h" }, "Today"), h("span", { class: "muted small num" }, `${me.today.events.length} punch${me.today.events.length === 1 ? "" : "es"}`)),
+          h("ol", {}, ...me.today.events.map((e) => h("li", { "data-t": e.type },
+            h("span", {}, h("strong", {}, EVENT_TEXT[e.type] ?? e.type), e.source === "kiosk" ? h("span", { class: "muted small" }, " · kiosk") : null),
+            h("span", { class: "num" }, fmtTime(e.occurred_at, tz))))),
         ),
-        h("p", { class: "muted small", style: "margin-top:2rem" }, "This link is personal to you. Don't share it. Tip: add it to your home screen."),
+        h("p", { class: "muted small foot" }, "This link is personal to you, so don't share it. Tip: add it to your home screen for one-tap access."),
       ),
     );
   }
 
   render();
   void load();
+}
+
+/** Last 7 days as a small bar chart; each bar is labelled for screen readers. */
+function weekCard(week: NonNullable<Me["week"]>, tz: string) {
+  const max = Math.max(8 * 3600, ...week.days.map((d) => d.worked_seconds));
+  const dayName = (iso: string, style: "narrow" | "long") =>
+    new Intl.DateTimeFormat(undefined, { weekday: style, timeZone: "UTC" }).format(new Date(`${iso}T12:00:00Z`));
+  return h("section", { class: "card", "aria-labelledby": "week-h" },
+    h("div", { class: "card-head" }, h("h2", { id: "week-h" }, "Last 7 days"), h("strong", { class: "num" }, hm(week.worked_seconds))),
+    h("div", { class: "week", role: "list" },
+      ...week.days.map((d, i) => {
+        const today = i === week.days.length - 1;
+        return h("div", { class: `week-day${d.worked_seconds ? " has" : ""}${today ? " today" : ""}`, role: "listitem", "aria-label": `${today ? "Today" : dayName(d.date, "long")}: ${hm(d.worked_seconds)}` },
+          h("div", { class: "week-bar", style: `height:${Math.max(3, Math.round((d.worked_seconds / max) * 100))}%` }),
+          h("span", { "aria-hidden": "true" }, dayName(d.date, "narrow")),
+        );
+      }),
+    ),
+    h("p", { class: "muted small", style: "margin:.5rem 0 0" }, `Days in ${tz.replace("_", " ")}.`),
+  );
 }

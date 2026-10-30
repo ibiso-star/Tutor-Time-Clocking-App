@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createHmac } from "node:crypto";
-import { transition, workedSeconds, type Action, type State } from "../src/server/domain.js";
+import { DateTime } from "luxon";
+import { dailyWorked, transition, workedSeconds, type Action, type State } from "../src/server/domain.js";
 import { newBadgeCode, newToken, normalizeBadge } from "../src/server/credentials.js";
 import { backoffSeconds, signWebhook } from "../src/server/webhooks.js";
 
@@ -58,5 +59,24 @@ describe("webhook signing", () => {
   it("backs off exponentially with a cap", () => {
     expect([1, 2, 3].map(backoffSeconds)).toEqual([30, 60, 120]);
     expect(backoffSeconds(20)).toBe(6 * 3600);
+  });
+});
+
+describe("daily totals", () => {
+  it("splits a shift that crosses midnight between the two days, in the given zone", () => {
+    // 22:00 to 02:00 London time (GMT in January), with a 30 min break straddling midnight.
+    const at = (iso: string) => new Date(iso);
+    const events = [
+      { type: "clock_in" as const, at: at("2026-01-14T22:00:00Z") },
+      { type: "break_start" as const, at: at("2026-01-14T23:45:00Z") },
+      { type: "break_end" as const, at: at("2026-01-15T00:15:00Z") },
+      { type: "clock_out" as const, at: at("2026-01-15T02:00:00Z") },
+    ];
+    const days = dailyWorked(events, DateTime.fromISO("2026-01-14", { zone: "Europe/London" }), 3, at("2026-02-01T00:00:00Z"));
+    expect(days).toEqual([
+      { date: "2026-01-14", worked_seconds: 105 * 60 },
+      { date: "2026-01-15", worked_seconds: 105 * 60 },
+      { date: "2026-01-16", worked_seconds: 0 },
+    ]);
   });
 });

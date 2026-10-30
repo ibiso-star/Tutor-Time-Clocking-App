@@ -115,6 +115,13 @@ paths:
         content: { application/json: { schema: { type: object, properties: { link: { type: boolean }, badge: { type: boolean } } } } }
       responses:
         "200": { description: New credentials (shown once), content: { application/json: { schema: { $ref: "#/components/schemas/EmployeeCredentials" } } } }
+  /api/v1/overview:
+    get:
+      tags: [Admin]
+      summary: Live snapshot of active employees, their state and today's worked time
+      security: [{ apiKey: [] }]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Overview" } } } }
   /api/v1/kiosks:
     get:
       tags: [Admin]
@@ -250,8 +257,37 @@ components:
         state: { $ref: "#/components/schemas/State" }
         since: { type: [string, "null"], format: date-time }
         today: { type: object, properties: { worked_seconds: { type: integer }, events: { type: array, items: { $ref: "#/components/schemas/ShiftEvent" } } } }
+        week:
+          type: object
+          description: The last 7 days in the portal timezone, oldest first, today last.
+          properties:
+            worked_seconds: { type: integer }
+            days: { type: array, items: { $ref: "#/components/schemas/DayTotal" } }
         timezone: { type: string }
         server_time: { type: string, format: date-time }
+    DayTotal:
+      type: object
+      properties:
+        date: { type: string, format: date }
+        worked_seconds: { type: integer }
+    Overview:
+      type: object
+      properties:
+        timezone: { type: string }
+        server_time: { type: string, format: date-time }
+        counts: { type: object, properties: { IN: { type: integer }, BREAK: { type: integer }, OUT: { type: integer } } }
+        today: { type: object, properties: { worked_seconds: { type: integer }, punches: { type: integer } } }
+        people:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string, format: uuid }
+              display_name: { type: string }
+              external_ref: { type: [string, "null"] }
+              state: { $ref: "#/components/schemas/State" }
+              since: { type: [string, "null"], format: date-time }
+              today_worked_seconds: { type: integer }
     KioskIdentity:
       type: object
       properties:

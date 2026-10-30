@@ -1,4 +1,4 @@
-# Shift Portal
+# Shift Portal (ShiftSnap)
 
 A standalone, zero-login shift tracker. Employees record when they start, take breaks and finish, either from a **personal secure link** on their own phone or at a **shared tablet kiosk** by scanning a badge QR or typing its code. There are no accounts, passwords or sessions for employees.
 
@@ -10,6 +10,19 @@ It's a separate module from the main Tutor Time Clock app (`../`): its own packa
  tablet ─(kiosk + badge)──┘     stateless     shift.* schema  └──◀ GET /api/v1/events     ◀── central site
  admin ──(API key)────────────▶                append-only
 ```
+
+## What each screen offers
+
+The interface is branded **ShiftSnap** and works in both light and dark mode.
+
+- **Personal link (`/s`)**: a greeting, the current state with a live timer, one-tap actions, a 7-day bar chart of worked time, and today's punches.
+- **Kiosk (`/kiosk`)**: a large clock and date, badge scan or typed code, the person's current state and since when, and a confirmation screen that returns to the start after a countdown (tap to skip). The kiosk never shows history.
+- **Admin (`/admin`)**:
+  - **Live**: who is on shift or on break right now, with running timers. Shows counts, total time worked today and the number of punches. Refreshes every 30 seconds.
+  - **People**: search by name or ID, plus access toggles and credential rotation.
+  - **Activity**: recent punches, which you can filter by person.
+  - **Timesheet**: quick ranges (this week, last week, this month, last 30 days), per-person totals with a grand total, a day-by-day table, and CSV export.
+  - **Kiosks** and **Integration**: as before.
 
 ## How identification works
 

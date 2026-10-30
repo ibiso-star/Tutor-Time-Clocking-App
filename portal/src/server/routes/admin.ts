@@ -96,6 +96,45 @@ export async function adminRoutes(app: FastifyInstance, deps: AppDeps) {
     return issue(id, body);
   });
 
+  /** Live snapshot for the admin dashboard: who is on shift now and today's worked time per person. */
+  app.get("/api/v1/overview", async (req) => {
+    auth(req);
+    const now = new Date();
+    const day = DateTime.fromJSDate(now, { zone: config.timezone }).startOf("day");
+    const from = day.toJSDate();
+    const to = day.plus({ days: 1 }).toJSDate();
+    const { rows: people } = await db.query<{ id: string; display_name: string; external_ref: string | null; state: "OUT" | "IN" | "BREAK"; since: Date | null }>(
+      `SELECT id, display_name, external_ref, state, state_since AS since FROM shift.employees WHERE active ORDER BY display_name`,
+    );
+    const { rows } = await db.query<{ employee_id: string; event_type: EventRow["event_type"]; occurred_at: Date }>(
+      `SELECT employee_id, event_type, occurred_at FROM shift.events WHERE session_id IN (
+          SELECT DISTINCT session_id FROM shift.events WHERE occurred_at >= $1::timestamptz - interval '2 days')
+        ORDER BY seq`,
+      [from],
+    );
+    const byEmp = new Map<string, Array<{ type: EventRow["event_type"]; at: Date }>>();
+    let punches = 0;
+    for (const r of rows) {
+      byEmp.set(r.employee_id, [...(byEmp.get(r.employee_id) ?? []), { type: r.event_type, at: r.occurred_at }]);
+      if (r.occurred_at >= from && r.occurred_at < to) punches++;
+    }
+    const list = people.map((p) => ({
+      id: p.id,
+      display_name: p.display_name,
+      external_ref: p.external_ref,
+      state: p.state,
+      since: p.since?.toISOString() ?? null,
+      today_worked_seconds: workedSeconds(byEmp.get(p.id) ?? [], from, to, now),
+    }));
+    return {
+      timezone: config.timezone,
+      server_time: now.toISOString(),
+      counts: { IN: list.filter((p) => p.state === "IN").length, BREAK: list.filter((p) => p.state === "BREAK").length, OUT: list.filter((p) => p.state === "OUT").length },
+      today: { worked_seconds: list.reduce((t, p) => t + p.today_worked_seconds, 0), punches },
+      people: list,
+    };
+  });
+
   app.get("/api/v1/kiosks", async (req) => {
     auth(req);
     const { rows } = await db.query(`SELECT id, name, active, created_at, last_seen_at, revoked_at FROM shift.kiosks ORDER BY active DESC, created_at DESC`);
