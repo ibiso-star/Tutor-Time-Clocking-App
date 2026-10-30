@@ -74,9 +74,13 @@ e2e/             Playwright end-to-end tests
 docs/            architecture, deployment, implementation status, product pack
 ```
 
+## Shift Portal (zero-login module)
+
+[`portal/`](portal/README.md) is a separate, lightweight shift tracker: employees punch in and out from a personal secure link or at a shared kiosk by badge, with no accounts or passwords. It exposes a REST event feed and signed webhooks, so it can be connected to a central website later. It has its own package, schema, tests and deployment.
+
 ## Documentation
 
 - [Architecture and decisions](docs/ARCHITECTURE.md)
-- [Deployment and operations](docs/DEPLOYMENT.md)
+- [Deployment and operations](docs/DEPLOYMENT.md) (including Vercel + Supabase)
 - [Implementation status, traceability and open decisions](docs/IMPLEMENTATION-STATUS.md)
 - [Product pack](docs/product/README.md)

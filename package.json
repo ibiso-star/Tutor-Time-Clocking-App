@@ -2,10 +2,10 @@
   "name": "tutor-time-clock",
   "version": "0.1.0",
   "private": true,
-  "description": "Vibe Amplified Tutor Time Clock — server-authoritative time capture for tutors with auditable admin review.",
+  "description": "Vibe Amplified Tutor Time Clock \u2014 server-authoritative time capture for tutors with auditable admin review.",
   "type": "module",
   "engines": {
-    "node": ">=20"
+    "node": "22.x"
   },
   "scripts": {
     "dev": "concurrently -n api,web -c blue,magenta \"npm:dev:api\" \"npm:dev:web\"",

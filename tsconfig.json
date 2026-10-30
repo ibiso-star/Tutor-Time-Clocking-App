@@ -1,0 +1,5 @@
+{
+  "extends": "./server/tsconfig.json",
+  "compilerOptions": { "noEmit": true },
+  "include": ["api", "server/src"]
+}

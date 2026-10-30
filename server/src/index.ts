@@ -7,7 +7,7 @@ import { migrate } from "./db/migrate.js";
 import { startAlertWorker } from "./services/notifications.js";
 
 const config = loadConfig();
-const db = createPool(config.databaseUrl);
+const db = createPool(config.databaseUrl, { ssl: config.databaseSsl });
 await migrate(db, (m) => console.log(`[migrate] ${m}`));
 
 const here = path.dirname(fileURLToPath(import.meta.url));

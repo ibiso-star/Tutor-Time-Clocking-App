@@ -77,7 +77,11 @@ export async function executeClock(db: Db, ctx: AuditContext, user: AuthUser, in
       { breaksEnabled: settings.breaks.enabled, clockOutWhileOnBreak: settings.breaks.clock_out_while_on_break },
       { endOpenBreak: input.end_open_break },
     );
-    if (!result.ok) throw conflict(result.code, result.message, { current_state: current });
+    if (result.ok === false) {
+      // Explicit narrowing so the check also holds under non-strict compilers (e.g. Vercel's per-file build).
+      const rejected = result as Extract<typeof result, { ok: false }>;
+      throw conflict(rejected.code, rejected.message, { current_state: current });
+    }
 
     const warnings: string[] = [];
     const metadata: Record<string, unknown> = { command: input.event_type };

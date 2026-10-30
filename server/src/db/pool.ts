@@ -4,9 +4,14 @@ export type Db = pg.Pool;
 export type Tx = pg.PoolClient;
 export type Queryable = pg.Pool | pg.PoolClient;
 
-export function createPool(connectionString: string): Db {
+export interface PoolOptions {
+  max?: number;
+  ssl?: pg.PoolConfig["ssl"];
+}
+
+export function createPool(connectionString: string, opts: PoolOptions = {}): Db {
   // Sessions always talk UTC; local time is applied explicitly per project timezone.
-  return new pg.Pool({ connectionString, max: 10, options: "-c TimeZone=UTC" });
+  return new pg.Pool({ connectionString, max: opts.max ?? 10, ssl: opts.ssl, options: "-c TimeZone=UTC" });
 }
 
 /**

@@ -23,6 +23,37 @@ On start, the API applies pending migrations, then serves `/v1/*` and the SPA. P
 | `SESSION_TTL_HOURS` | `12` | Absolute session lifetime |
 | `ALERT_WORKER_ENABLED` | `true` | Set `false` on all but one instance, or run the sweep separately |
 
+## Vercel + Supabase
+
+The repository deploys to Vercel as static files plus one serverless function, with PostgreSQL on Supabase.
+
+- **Static site:** the built SPA in `dist/web`.
+- **API:** `api/index.ts` runs the same Fastify app.
+- **Routing:** `vercel.json` sends `/v1/*` and `/healthz` to the function and everything else to the SPA, and sets the security headers.
+
+**Database setup (once):**
+1. Create a Supabase project and apply the migrations. The schema is `server/src/db/migrations/*.sql`; run them through the Supabase SQL editor, or run `npm run db:migrate` with the owner connection string.
+2. Run `deploy/supabase-hardening.sql` as `postgres`. It does three things:
+   - turns on Row Level Security with a policy admitting only `ttc_app`
+   - removes Data API access for `anon` and `authenticated`
+   - creates the least-privilege `ttc_app` login role
+3. Set the role's password in the SQL editor: `ALTER ROLE ttc_app PASSWORD '<generated>';`. Keep it out of chat and source control.
+
+**Vercel environment variables (Production):**
+
+| Variable | Value |
+|---|---|
+| `DATABASE_URL` | Supabase **transaction pooler** string (port 6543), with user `ttc_app.<project-ref>` and the password above. Don't append `sslmode`. |
+| `DATABASE_SSL` | `require` (TLS on, server certificate not verified), **or** set `DATABASE_CA_CERT` to the PEM text of Supabase's CA (Dashboard → Database settings → SSL) for full verification |
+| `NODE_ENV` | `production` |
+| `APP_BASE_URL` | The production URL, used in reset/invite links |
+| `DEMO_SEED` | `true` only for a public demo: seeds demo data into an empty database on first start |
+
+**Differences from the long-running server:**
+- No migrations on start: apply them before deploying a new schema.
+- No background alert worker: alert sweeps run (deduplicated, at most once a minute per instance) when reviewers poll their alerts.
+- The login rate limiter is per function instance, so it's weaker than on a single server. Add a shared store before relying on it.
+
 ## Before real employee data (release gates from the product pack)
 
 These are organisational decisions. The software defaults are safe, but they are not legal approval.
